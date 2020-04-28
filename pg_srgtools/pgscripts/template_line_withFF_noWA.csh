@@ -19,7 +19,7 @@ printf "DROP TABLE IF EXISTS $schema.wp_cty_cell_${surg_code}_${grid}; \n" > ${o
 printf "CREATE TABLE $schema.wp_cty_cell_${surg_code}_${grid}  ($data_attribute varchar(5) not null,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tcolnum integer not null,\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\trownum integer not null,\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-  printf "\tlength_wp_cty_cell double precision default 0.1) ;\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\tlength_wp_cty_cell double precision default 0.1) ;\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 
 printf "SELECT AddGeometryColumn('${schema}', 'wp_cty_cell_${surg_code}_${grid}', 'geom_${grid_proj}', ${grid_proj},'MultiLineString', 2);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 
@@ -27,7 +27,7 @@ printf "insert into $schema.wp_cty_cell_${surg_code}_${grid}\n" >>  ${output_dir
 printf "SELECT ${data_attribute},\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tcolnum,\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\trownum,\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-  printf "\t0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tCASE\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\twhen ST_CoveredBy(${weight_table}.geom_${grid_proj},${grid_table}.gridcell)\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tTHEN ${weight_table}.geom_${grid_proj}\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
@@ -40,8 +40,8 @@ printf "    ON (NOT ST_Touches(${weight_table}.geom_${grid_proj},${grid_table}.g
 printf "    	AND ST_Intersects(${weight_table}.geom_${grid_proj},${grid_table}.gridcell))\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "    WHERE ${weight_table}.${filter_function}; \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 
+printf "UPDATE ${schema_name}.wp_cty_cell_${surg_code}_${grid} SET geom_${srid_final} = ST_MakeValid(geom_${srid_final}) WHERE NOT ST_IsValid(geom_${srid_final});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "create index on $schema.wp_cty_cell_${surg_code}_${grid} using GIST(geom_${grid_proj});\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-
 printf "vacuum analyze $schema.wp_cty_cell_${surg_code}_${grid};\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 
 printf "UPDATE $schema.wp_cty_cell_${surg_code}_${grid}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql

@@ -6,7 +6,7 @@
 VAR_DEFINITIONS
 
 setenv cluster false					
-setenv shp_tbl_d `echo $data_shape | tr "[:upper:]" "[:lower:]"` 
+setenv shp_tbl_d `echo $data_shape |  tr "[:upper:]" "[:lower:]"` 
 setenv shp_tbl_w `echo $weight_shape | tr "[:upper:]" "[:lower:]"` 
 set data_table=$schema.${shp_tbl_d}
 set weight_table=$schema.${shp_tbl_w}
@@ -18,18 +18,18 @@ set geom_weight=${weight_table}.geom_${srid_final}
 
 echo $data_table
 # cut with geographic boundaries
-printf "DROP TABLE IF EXISTS ${schema_name}.wp_cty_${surg_code};\n" > ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "CREATE TABLE ${schema_name}.wp_cty_${surg_code}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "DROP TABLE IF EXISTS ${schema_name}.wp_cty_${surg_code}_${srid_final};\n" > ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "CREATE TABLE ${schema_name}.wp_cty_${surg_code}_${srid_final}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "\t(${data_attribute} varchar (6) not null,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "\t${weight_attribute} double precision default 0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "\t${weight_attribute}_dens double precision default 0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "\t${weight_attribute}_dens_${srid_final} double precision default 0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "\tarea_${srid_final} double precision default 0.0);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "SELECT AddGeometryColumn('${schema_name}', 'wp_cty_${surg_code}', 'geom_${srid_final}', ${srid_final}, 'MultiPolygon', 2);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "SELECT AddGeometryColumn('${schema_name}', 'wp_cty_${surg_code}_${srid_final}', 'geom_${srid_final}', ${srid_final}, 'MultiPolygon', 2);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 
-printf "insert into ${schema_name}.wp_cty_${surg_code}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "insert into ${schema_name}.wp_cty_${surg_code}_${srid_final}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "SELECT ${data_table}.${data_attribute},\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "\t${weight_attribute},\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "\t${weight_attribute}_dens,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "\t${weight_attribute}_dens_${srid_final},\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "        0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 # When data shape file and weight shapfile are same
 if ( ${data_table} == ${weight_table} ) then 
@@ -47,13 +47,15 @@ else
   printf "\tON (NOT ST_Touches(${geom_weight},${geom_data})\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
   printf "\t\tAND ST_Intersects(${geom_weight},${geom_data}));\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 endif
-printf "update  ${schema_name}.wp_cty_${surg_code} set area_${srid_final}=ST_Area(geom_${srid_final});\n"  >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "update  ${schema_name}.wp_cty_${surg_code} set\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "\t${weight_attribute}=${weight_attribute}_dens * area_${srid_final};\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "create index on ${schema}.wp_cty_${surg_code} using GIST(geom_${grid_proj});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "\tvacuum analyze ${schema_name}.wp_cty_${surg_code};" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "UPDATE ${schema_name}.wp_cty_${surg_code}_${srid_final} SET geom_${srid_final} = ST_MakeValid(geom_${srid_final}) WHERE NOT ST_IsValid(geom_${srid_final});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+
+printf "UPDATE  ${schema_name}.wp_cty_${surg_code}_${srid_final} set area_${srid_final}=ST_Area(geom_${srid_final});\n"  >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "update  ${schema_name}.wp_cty_${surg_code}_${srid_final} set\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "\t${weight_attribute}=${weight_attribute}_dens_${srid_final} * area_${srid_final};\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "create index on ${schema}.wp_cty_${surg_code}_${srid_final} using GIST(geom_${grid_proj});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "\tvacuum analyze ${schema_name}.wp_cty_${surg_code}_${srid_final};" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 echo "Cutting by data shapefile boundaries"
-$PGBIN/psql -h $server -d $dbname -U $user password='sepia6#vibes' -f ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+$PGBIN/psql -h $server -d $dbname -U $user  -f ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 
 
 # create query to grid weight data
@@ -64,7 +66,7 @@ printf "\tcolnum integer not null,\n" >> ${output_dir}/temp_files/${surg_code}_c
 printf "\trownum integer not null,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tarea_${srid_final} double precision default 1.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\t${weight_attribute} double precision default 0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql 
-printf "\t${weight_attribute}_dens double precision default 0.0);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql 
+printf "\t${weight_attribute}_dens_${srid_final} double precision default 0.0);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql 
 
 printf "SELECT AddGeometryColumn('${schema_name}', 'wp_cty_cell_${surg_code}_${grid}', 'geom_${srid_final}', ${srid_final}, 'MultiPolygon', 2);\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 	
@@ -72,22 +74,23 @@ printf "INSERT INTO ${schema_name}.wp_cty_cell_${surg_code}_${grid}\n" >> ${outp
 printf "\tSELECT ${data_attribute}, colnum, rownum,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "        0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\t${weight_attribute},\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\t${weight_attribute}_dens,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t${weight_attribute}_dens_${srid_final},\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tCASE\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\twhen ST_CoveredBy(${schema}.wp_cty_${surg_code}.geom_${grid_proj}, ${grid_table}.gridcell)\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\t\tTHEN wp_cty_${surg_code}.geom_${grid_proj}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\twhen ST_CoveredBy(${schema}.wp_cty_${surg_code}_${srid_final}.geom_${grid_proj}, ${grid_table}.gridcell)\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t\tTHEN wp_cty_${surg_code}_${srid_final}.geom_${grid_proj}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\t\tELSE\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\t\t\tST_CollectionExtract(ST_Multi(ST_Intersection(${schema}.wp_cty_${surg_code}.geom_${grid_proj}, ${grid_table}.gridcell)),3)\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t\t\tST_CollectionExtract(ST_Multi(ST_Intersection(${schema}.wp_cty_${surg_code}_${srid_final}.geom_${grid_proj}, ${grid_table}.gridcell)),3)\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\t\tEND AS geom_${srid_final}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\tFROM ${schema}.wp_cty_${surg_code}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\tFROM ${schema}.wp_cty_${surg_code}_${srid_final} \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tJOIN ${grid_table}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\tON (NOT ST_Touches(${schema}.wp_cty_${surg_code}.geom_${grid_proj}, ${grid_table}.gridcell)\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\t\tAND ST_Intersects(${schema}.wp_cty_${surg_code}.geom_${grid_proj}, ${grid_table}.gridcell));\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\tON (NOT ST_Touches(${schema}.wp_cty_${surg_code}_${srid_final}.geom_${grid_proj}, ${grid_table}.gridcell)\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t\tAND ST_Intersects(${schema}.wp_cty_${surg_code}_${srid_final}.geom_${grid_proj}, ${grid_table}.gridcell));\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "UPDATE ${schema_name}.wp_cty_cell_${surg_code}_${grid} SET geom_${srid_final} = ST_MakeValid(geom_${srid_final}) WHERE NOT ST_IsValid(geom_${srid_final});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "UPDATE ${schema_name}.wp_cty_cell_${surg_code}_${grid} set area_${srid_final}=ST_Area(geom_${srid_final});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "UPDATE ${schema_name}.wp_cty_cell_${surg_code}_${grid} set\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\t${weight_attribute}=${weight_attribute}_dens * area_${srid_final};\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t${weight_attribute}=${weight_attribute}_dens_${srid_final} * area_${srid_final};\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "create index  on $schema.wp_cty_cell_${surg_code}_${grid} using GIST(geom_${grid_proj});\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\tvacuum analyze ${schema_name}.wp_cty_cell_${surg_code}_${grid};" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "\tvacuum analyze ${schema_name}.wp_cty_cell_${surg_code}_${grid};" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 echo "Gridding weight data to modeling domain"
 $PGBIN/psql -h $server -d $dbname -U $user -f ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 

@@ -13,8 +13,8 @@ set data_table=$schema.$data_shape
 set weight_table=$schema.$weight_shape
 
 # - roads split by county boundaries 
-printf "DROP TABLE IF EXISTS ${schema}.wp_cty_${surg_code}; \n" > ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "CREATE TABLE ${schema}.wp_cty_${surg_code} AS (\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "DROP TABLE IF EXISTS ${schema}.wp_cty_${surg_code}_${srid_final}; \n" > ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "CREATE TABLE ${schema}.wp_cty_${surg_code}_${srid_final} AS (\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "SELECT $data_attribute,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "       CASE \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "       WHEN ST_CoveredBy(${weight_table}.geom_${grid_proj}, ${data_table}.geom_${grid_proj}) \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
@@ -26,9 +26,10 @@ printf "  FROM ${data_table}\n" >> ${output_dir}/temp_files/${surg_code}_create_
 printf "  JOIN  ${weight_table} \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "    ON (NOT ST_Touches(${weight_table}.geom_${grid_proj}, ${data_table}.geom_${grid_proj}) \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 printf "        AND ST_Intersects(${weight_table}.geom_${grid_proj}, ${data_table}.geom_${grid_proj})) );\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "DELETE from wp_cty_${surg_code} where GeometryType(geom_900921)!='MULTILINESTRING';\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "create index on ${schema}.wp_cty_${surg_code} using GIST(geom_${grid_proj}); \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
-printf "vacuum analyze ${schema}.wp_cty_${surg_code}; \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+#printf "DELETE from wp_cty_${surg_code}_${srid_final} where GeometryType(geom_900921)!='MULTILINESTRING';\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "UPDATE ${schema_name}.wp_cty_${surg_code}_${srid_final} SET geom_${srid_final} = ST_MakeValid(geom_${srid_final}) WHERE NOT ST_IsValid(geom_${srid_final});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "create index on ${schema}.wp_cty_${surg_code}_${srid_final} using GIST(geom_${grid_proj}); \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
+printf "vacuum analyze ${schema}.wp_cty_${surg_code}_${srid_final}; \n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 $PGBIN/psql -h $server -d $dbname -U $user -f ${output_dir}/temp_files/${surg_code}_create_wp_cty.sql
 
 
@@ -47,18 +48,18 @@ printf "\tcolnum,\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cel
 printf "\trownum,\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
   printf "\t0.0,\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tCASE\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\twhen ST_CoveredBy(wp_cty_${surg_code}.geom_${grid_proj},${grid_table}.gridcell)\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\tTHEN wp_cty_${surg_code}.geom_${grid_proj}\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\twhen ST_CoveredBy(wp_cty_${surg_code}_${srid_final}.geom_${grid_proj},${grid_table}.gridcell)\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\tTHEN wp_cty_${surg_code}_${srid_final}.geom_${grid_proj}\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tELSE  \n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "\t\tST_CollectionExtract(ST_Multi(ST_Intersection(wp_cty_${surg_code}.geom_${grid_proj},${grid_table}.gridcell)),2) \n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "\t\tST_CollectionExtract(ST_Multi(ST_Intersection(wp_cty_${surg_code}_${srid_final}.geom_${grid_proj},${grid_table}.gridcell)),2) \n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "\tEND AS geom_${grid_proj} \n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "  FROM wp_cty_${surg_code}\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "  FROM wp_cty_${surg_code}_${srid_final}\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 printf "  JOIN ${grid_table} \n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "    ON (NOT ST_Touches(wp_cty_${surg_code}.geom_${grid_proj},${grid_table}.gridcell)\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-printf "        AND ST_Intersects(wp_cty_${surg_code}.geom_${grid_proj},${grid_table}.gridcell));\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "    ON (NOT ST_Touches(wp_cty_${surg_code}_${srid_final}.geom_${grid_proj},${grid_table}.gridcell)\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "        AND ST_Intersects(wp_cty_${surg_code}_${srid_final}.geom_${grid_proj},${grid_table}.gridcell));\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
+printf "UPDATE ${schema_name}.wp_cty_cell_${surg_code}_${grid} SET geom_${srid_final} = ST_MakeValid(geom_${srid_final}) WHERE NOT ST_IsValid(geom_${srid_final});\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 
 printf "create index on $schema.wp_cty_cell_${surg_code}_${grid} using GIST(geom_${grid_proj});\n" >>  ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
-
 printf "vacuum analyze $schema.wp_cty_cell_${surg_code}_${grid};\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql
 
 printf "UPDATE $schema.wp_cty_cell_${surg_code}_${grid}\n" >> ${output_dir}/temp_files/${surg_code}_create_wp_cty_cell.sql

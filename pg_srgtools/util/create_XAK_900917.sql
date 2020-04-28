@@ -1,0 +1,3 @@
+INSERT INTO spatial_ref_sys (srid, auth_name, srtext, proj4text) VALUES
+(900917, 'XAK','PROJCS["Lambert_Conformal_Conic",GEOGCS["GCS_Sphere_WRF",DATUM["Sphere_WRF",SPHEROID["Sphere_WRF",6370000.0,0.0]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic_2SP"],PARAMETER
+ ["false_easting",0.0],PARAMETER["false_northing",0.0],PARAMETER["central_meridian",-155.0],PARAMETER["standard_parallel_1",60.0],PARAMETER["standard_parallel_2",70.0],PARAMETER["latitude_of_origin",63.0],UNIT["Meter",1.0"]]', '+proj=lcc +lat_1=60 +lat_2=70 +lat_0=63 +lon_0=-155 +x_0=0 +y_0=0 +a=6370000 +b=6370000 +units=m +no_defs');

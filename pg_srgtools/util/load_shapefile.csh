@@ -9,32 +9,55 @@ setenv shp_tbl `echo $shapefile | tr "[:upper:]" "[:lower:]"`
 
 echo $shapefile
 #if ( $shp_tbl == "acs_2014_5yr_pophousing" ) then
-  $GDALBIN/ogr2ogr -f "PostgreSQL" "PG:dbname=$dbname user=$user host=$server" $indir/$shapefile.shp -lco PRECISION=NO -nlt PROMOTE_TO_MULTI -nln $schema.$table -overwrite
-# $GDALBIN/ogr2ogr -f "PostgreSQL" "PG:dbname=$dbname user=$user" $indir/$shapefile.shp -lco UPLOAD_GEOM_FORMAT=wkt -nlt PROMOTE_TO_MULTI -nln $schema.$table -overwrite
-#endif
+$GDALBIN/ogr2ogr -f "PostgreSQL" "PG:dbname=$dbname user=$user host=$server" $indir/$shapefile.shp -lco PRECISION=NO -nlt PROMOTE_TO_MULTI -nln $schema.$table -overwrite
+echo "Finished loading shapefile: " $indir/$shapefile.shp
 
-#/usr/bin/ogr2ogr -f "PostgreSQL" "PG:dbname=$dbname user=$user" $indir/$shapefile.shp -lco UPLOAD_GEOM_FORMAT=wkt -nlt PROMOTE_TO_MULTI -nln $schema.$table -overwrite
-# 2. Tranform to a new projection (from original 900922 to new 900921) and create gist index on it
+# 2. Tranform to a new projection (from original to new 900921/900915) and create gist index on it
 $PGBIN/psql -h $server -U $user -q $dbname << END1
 ALTER TABLE $schema.$table ADD COLUMN $newfield geometry($geomtype, $srid);
 -- CREATE INDEX ON $schema.$table USING GIST ($newfield);
+DROP INDEX if exists $schema.${table}_${org_geom_field}_geom_idx;
+DROP INDEX if exists $schema.${table}_${newfield}_idx;
 UPDATE $schema.$table SET $newfield = ST_Transform($org_geom_field, $srid);
-drop index if exists $schema.${table}_${org_geom_field}_geom_idx;
-create index on $schema.${table} using GIST(geom_900921);
+CREATE INDEX on $schema.${table} using GIST(geom_$srid );
 END1
 
+# 3. Check whether the shapefile data are imported correclty or not.
+$PGBIN/psql -h $server -U $user -q $dbname << END1
+update ${schema}.${table}
+        SET ${newfield} = ST_MakeValid(${newfield})
+       WHERE NOT ST_IsValid(${newfield});
+END1
+#UPDATE $schema.$table SET $newfield = ST_Transform($org_geom_field, $srid);
+#UPDATE $schema.$table SET $newfield = ST_Buffer($newfield, 0.0);
+#DROP INDEX if exists $schema.${table}_${org_geom_field}_geom_idx;
+
+# Create ntad_2017_county_pol based on 2014
+if ( $table == "ntad_2014_county_pol" ) then
+$PGBIN/psql -h $server -U $user -q $dbname << END1
+  DROP TABLE  ntad_2017_county_pol;
+  CREATE TABLE ntad_2017_county_pol as select * FROM ntad_2014_county_pol;
+  UPDATE ntad_2017_county_pol set ctfips='46102' WHERE  ctfips='46113';
+  UPDATE $schema.$table SET $newfield = ST_Transform($org_geom_field, $srid);
+  UPDATE $schema.$table SET $newfield = ST_Buffer($newfield, 0.0);
+  DROP INDEX if exists $schema.${table}_${org_geom_field}_geom_idx;
+  DROP INDEX if exists $schema.${table}_${newfield}_idx;
+  CREATE INDEX on $schema.${table} using GIST(geom_$srid );
+END1
+endif
 
 # add columns
-if ( $table == "hpms2016" ) then
+#if ( $table == "hpms2016" ||  $table == "hpms2017_update" ) then
+if ( $table == "hpms2016" ||  $table == "hpms2017_v3_04052020" ) then
 $PGBIN/psql -h $server -U $user -q $dbname << END1
   ALTER TABLE $schema.$table ALTER COLUMN moves2014 TYPE INT USING moves2014::integer;
-  update $schema.$table set fips='46113'  where fips='46102';
   ALTER TABLE $schema.$table
-    add column length_900921 double precision,
-    add column aadt_dens double precision;
+    add column length_$srid double precision,
+    add column aadt_dens_${srid} double precision;
   update $schema.$table
-    set length_900921=ST_Length(geom_900921),
-    aadt_dens=aadt/length_900921;
+    set length_${srid} = ST_Length(geom_${srid});
+  update $schema.$table
+    set aadt_dens_${srid} = aadt/length_${srid};
 END1
 endif
 
@@ -46,6 +69,7 @@ $PGBIN/psql -h $server -U $user -q $dbname << END1
   update $schema.$table set geoid=concat(statefips, cntyfips);
 END1
 endif
+
 
 #
 #if ( $table == "ntad_2014_ipcd" ) then
@@ -73,54 +97,83 @@ endif
 if ( $table == "acs_2014_5yr_pophousing" ) then
 $PGBIN/psql -h $server -U $user -q $dbname << END1
   ALTER TABLE $schema.$table
-        add column area_900921 double precision,
-        add column pop2014_dens double precision,
-        add column hu2014_dens double precision,
-        add column popch14_10_dens double precision,
-        add column huch14_10_dens double precision,
-        add column pop2010_dens double precision,
-        add column hu2010_dens double precision,
-        add column pop2000_dens double precision,
-        add column hu2000_dens double precision,
-        add column util_gas_dens double precision,
-        add column wood_dens double precision,
-        add column fuel_oil_dens double precision,
-        add column coal_dens double precision,
-        add column lp_gas_dens double precision,
-        add column elec_dens double precision,
-        add column solar_dens double precision;
+        add column area_$srid double precision,
+        add column pop2014_dens_${srid} double precision,
+        add column hu2014_dens_${srid} double precision,
+        add column popch14_10_dens_${srid} double precision,
+        add column huch14_10_dens_${srid} double precision,
+        add column pop2010_dens_${srid} double precision,
+        add column hu2010_dens_${srid} double precision,
+        add column pop2000_dens_${srid} double precision,
+        add column hu2000_dens_${srid} double precision,
+        add column util_gas_dens_${srid} double precision,
+        add column wood_dens_${srid} double precision,
+        add column fuel_oil_dens_${srid} double precision,
+        add column coal_dens_${srid} double precision,
+        add column lp_gas_dens_${srid} double precision,
+        add column elec_dens_${srid} double precision,
+        add column solar_dens_${srid} double precision;
   update $schema.$table
-        set area_900921=ST_Area(geom_900921);
+        set area_$srid =ST_Area(geom_$srid );
   update $schema.$table set
-        pop2014_dens=pop2014 / area_900921,
-        hu2014_dens=hu2014 / area_900921,
-        popch14_10_dens=popch14_10 / area_900921,
-        huch14_10_dens=huch14_10 / area_900921,
-        pop2010_dens=pop2010 / area_900921,
-        hu2010_dens=hu2010 / area_900921,
-        pop2000_dens=pop2000 / area_900921,
-        hu2000_dens=hu2000 / area_900921,
-        util_gas_dens=util_gas / area_900921,
-        wood_dens=wood / area_900921,
-        fuel_oil_dens=fuel_oil / area_900921,
-        coal_dens=coal / area_900921,
-        lp_gas_dens=lp_gas / area_900921,
-        elec_dens=elec / area_900921,
-        solar_dens=solar / area_900921;
+        pop2014_dens_${srid}=pop2014 / area_$srid ,
+        hu2014_dens_${srid}=hu2014 / area_$srid ,
+        popch14_10_dens_${srid}=popch14_10 / area_9$srid 
+        huch14_10_dens_${srid}=huch14_10 / area_$srid ,
+        pop2010_dens_${srid}=pop2010 / area_$srid ,
+        hu2010_dens_${srid}=hu2010 / area_$srid ,
+        pop2000_dens_${srid}=pop2000 / area_$srid ,
+        hu2000_dens_${srid}=hu2000 / area_$srid ,
+        util_gas_dens_${srid}=util_gas / area_$srid ,
+        wood_dens_${srid}=wood / area_$srid ,
+        fuel_oil_dens_${srid}=fuel_oil / area_$srid ,
+        coal_dens_${srid}=coal / area_$srid ,
+        lp_gas_dens_${srid}=lp_gas / area_$srid ,
+        elec_dens_${srid}=elec / area_$srid ,
+        solar_dens_${srid}=solar / area_$srid ;
 END1
 endif
+
+if ( $table == "acs2016_5yr_bg" ) then
+$PGBIN/psql -h $server -U $user -q $dbname << END1
+  ALTER TABLE $schema.$table
+        add column area_$srid  double precision,
+        add column pop2016_dens_${srid} double precision,
+        add column hu2016_dens_${srid} double precision,
+        add column util_gas_dens_${srid} double precision,
+        add column wood_dens_${srid} double precision,
+        add column fuel_oil_dens_${srid} double precision,
+        add column coal_dens_${srid} double precision,
+        add column lp_gas_dens_${srid} double precision,
+        add column elec_dens_${srid} double precision,
+        add column solar_dens_${srid} double precision;
+  update $schema.$table
+        set area_$srid =ST_Area(geom_$srid );
+  update $schema.$table set
+        pop2016_dens_${srid}=pop2016 / area_$srid ,
+        hu2016_dens_${srid}=hu2016 / area_$srid ,
+        util_gas_dens_${srid}=util_gas / area_$srid ,
+        wood_dens_${srid}=wood / area_$srid ,
+        fuel_oil_dens_${srid}=fuel_oil / area_$srid ,
+        coal_dens_${srid}=coal / area_$srid ,
+        lp_gas_dens_${srid}=lp_gas / area_$srid ,
+        elec_dens_${srid}=elec / area_$srid ,
+        solar_dens_${srid}=solar / area_$srid ;
+END1
+endif
+
 
 if ( $table == "shippinglanes_2014nei" || $table == "ports_2014nei" ) then
 psql -h $server -U $user -q $dbname << END1
   ALTER TABLE $schema.$table
-        add column area_900921 double precision,
-        add column area_sqmi_dens double precision,
-        add column activitykw_dens double precision;
+        add column area_$srid  double precision,
+        add column area_sqmi_dens_${srid} double precision,
+        add column activitykw_dens_${srid} double precision;
   update $schema.$table
-        set area_900921=ST_Area(geom_900921);
+        set area_$srid =ST_Area(geom_$srid );
   update $schema.$table set
-        area_sqmi_dens=area_sqmi/area_900921,
-        activitykw_dens=activitykw/area_900921;
+        area_sqmi_dens_${srid}=area_sqmi/area_$srid ,
+        activitykw_dens_${srid}=activitykw/area_$srid ;
 END1
 endif
 
@@ -130,75 +183,32 @@ psql -h $server -U $user -q $dbname << END1
         add column su_500 double precision,
         add column su_505 double precision,
         add column su_506 double precision,
-        add column su_507 double precision,
         add column su_510 double precision,
-        add column su_515 double precision,
-        add column su_520 double precision,
-        add column su_526 double precision,
-        add column su_535 double precision,
-        add column su_555 double precision,
-        add column su_575 double precision,
-        add column su_596 double precision;
-  update ${schema}.${table} set
+        add column su_535 double precision;
+   update ${schema}.${table} set
        su_500=com1+com2+com3+com4+com5+com6+com7+com8+com9,
        su_505=ind1+ind2+ind3+ind4+ind5+ind6,
        su_506=edu1+edu2,
-       su_507=ind1+ind2+ind6,
        su_510=com1+com2+com3+com4+com5+com6+com7+com8+com9+ind1+ind2+ind3+ind4+ind5+ind6,
-       su_515=com1+com2+com3+com4+com5+com6+com7+com8+com9+res5+res6+edu1+edu2+rel1,
-       su_520=com1+com2+com3+com4+com5+com6+com7+com8+com9+ind1+ind2+ind3+ind4+ind5+ind6+res5+res6+edu1+edu2+rel1,
-       su_526=RES1+RES2+RES3,
-       su_535=com1+com2+com3+com4+com5+com6+com7+com8+com9+ind1+ind2+ind3+ind4+ind5+ind6+edu1+edu2+rel1+gov1+gov2+res1+res2+res3+res4,
-       su_555=com4+gov1,
-       su_575=ind2+ind5,
-       su_596=ind1+ind2+ind3+ind4+ind5+ind6+com6+edu1+edu2+rel1+res5+res6;
-    ALTER TABLE ${schema}.${table}
-        add column area_900921 double precision,
-        add column su_500_dens double precision,
-        add column su_505_dens double precision,
-        add column su_506_dens double precision,
-        add column su_507_dens double precision,
-        add column su_510_dens double precision,
-        add column su_515_dens double precision,
-        add column su_520_dens double precision,
-        add column su_526_dens double precision,
-        add column su_535_dens double precision,
-        add column su_555_dens double precision,
-        add column su_575_dens double precision,
-        add column su_596_dens double precision;
-  update ${schema}.${table}
-        set area_900921=ST_Area(geom_900921);
-  update ${schema}.${table} set
-        su_500_dens=su_500 / area_900921,
-        su_505_dens=su_505 / area_900921,
-        su_506_dens=su_506 / area_900921,
-        su_507_dens=su_507 / area_900921,
-        su_510_dens=su_510 / area_900921,
-        su_515_dens=su_515 / area_900921,
-        su_520_dens=su_520 / area_900921,
-        su_526_dens=su_526 / area_900921,
-        su_535_dens=su_535 / area_900921,
-        su_555_dens=su_555 / area_900921,
-        su_575_dens=su_575 / area_900921,
-        su_596_dens=su_596 / area_900921;
+       su_535=com1+com2+com3+com4+com5+com6+com7+com8+com9+ind1+ind2+ind3+ind4+ind5+ind6+edu1+edu2+rel1+gov1+gov2+res1+res2+res3+res4;
   ALTER TABLE ${schema}.${table}
-        add column res1_dens double precision,
-        add column com1_dens double precision,
-        add column com3_dens double precision,
-        add column com6_dens double precision,
-        add column ind1_dens double precision,
-        add column ind2_dens double precision,
-        add column ind3_dens double precision,
-        add column ind4_dens double precision;
+        add column area_$srid  double precision;
+  update ${schema}.${table}
+        set area_$srid =ST_Area(geom_$srid );
+  ALTER TABLE ${schema}.${table}
+        add column su_500_dens_$srid double precision,
+        add column su_505_dens_$srid double precision,
+        add column su_506_dens_$srid double precision,
+        add column su_510_dens_$srid double precision,
+        add column su_535_dens_$srid double precision,
+        add column com6_dens_$srid double precision;
   update ${schema}.${table} set
-        res1_dens=res1 / area_900921,
-        com1_dens=com1 / area_900921,
-        com3_dens=com3 / area_900921,
-        com6_dens=com6 / area_900921,
-        ind1_dens=ind1 / area_900921,
-        ind2_dens=ind2 / area_900921,
-        ind3_dens=ind3 / area_900921,
-        ind4_dens=ind4 / area_900921;
+        su_500_dens_$srid=su_500 / area_$srid ,
+        su_505_dens_$srid=su_505 / area_$srid ,
+        su_506_dens_$srid=su_506 / area_$srid,
+        su_510_dens_$srid=su_510 / area_$srid ,
+        su_535_dens_$srid=su_535 / area_$srid ,
+        com6_dens_$srid=com6 / area_$srid ;
 END1
 endif
 
@@ -207,20 +217,14 @@ echo $attr   $geomtype
 if ( $attr != "" && $geomtype == "MultiPolygon" ) then
 psql -h $server -U $user -q $dbname << END1
   ALTER TABLE ${schema}.${table}
-        add column ${attr}_dens double precision,
-        add column area_900921 double precision;
+        add column ${attr}_dens_${srid} double precision,
+        add column area_$srid  double precision;
   update ${schema}.$table
-        set area_900921=ST_Area(geom_900921);
+        set area_$srid =ST_Area(geom_$srid );
   update ${schema}.$table set
-        ${attr}_dens=${attr}/area_900921;
+        ${attr}_dens_${srid}=${attr}/area_$srid ;
 END1
 endif
 
 
-# 3. Check whether the shapefile data are imported correclty or not.
-$PGBIN/psql -h $server -U $user -q $dbname << END1
-update ${schema}.${table}
-        SET ${newfield} = ST_MakeValid(${newfield})
-       WHERE NOT ST_IsValid(${newfield});
-END1
 
